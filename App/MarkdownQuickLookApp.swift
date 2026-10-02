@@ -31,13 +31,13 @@ struct SettingsView: View {
                 HStack { Text("字号"); Slider(value: $fontSize, in: 12...24, step: 1); Text("\(Int(fontSize)) px").monospacedDigit().frame(width: 48) }
                 HStack { Text("宽度"); Slider(value: $contentWidth, in: 480...1400, step: 20); Text("\(Int(contentWidth)) px").monospacedDigit().frame(width: 64) }
             }
-            Text("设置自动保存，重新打开预览后生效。支持表格、任务列表、脚注、代码高亮和本地图片。远程图片会显示提示，不会自动联网加载。").font(.callout).foregroundStyle(.secondary)
+            Text("设置自动保存，重新打开预览后生效。支持表格、任务列表、脚注、代码高亮、本地图片、Mermaid 图表和数学公式。远程图片会显示提示，不会自动联网加载。").font(.callout).foregroundStyle(.secondary)
             HStack {
                 Button("打开扩展设置") {
                     NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.ExtensionsPreferences")!)
                 }
                 Spacer()
-                Text("1.0 · 无广告").foregroundStyle(.secondary).font(.caption)
+                Text("1.1 · 无广告").foregroundStyle(.secondary).font(.caption)
             }
         }.padding(28).frame(width: 480)
     }

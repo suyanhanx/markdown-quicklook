@@ -17,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>XPC!</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionAttributes</key>
@@ -35,6 +35,8 @@
 				<string>com.unknown.md</string>
 				<string>com.rstudio.rmarkdown</string>
 				<string>org.quarto.qmarkdown</string>
+				<string>local.yan.mermaid</string>
+				<string>dyn.ah62d4rv4ge8043pwrzu0w3a</string>
 			</array>
 			<key>QLSupportsSearchableItems</key>
 			<false/>

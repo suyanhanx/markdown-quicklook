@@ -25,7 +25,13 @@ final class MarkdownRenderer {
         let data = try Data(contentsOf: file)
         guard data.count <= 20 * 1024 * 1024 else { throw RenderError.fileTooLarge }
         guard let markdown = String(data: data, encoding: .utf8) else { throw RenderError.invalidUTF8 }
-        return try render(markdown: markdown, title: file.lastPathComponent, baseURL: file.deletingLastPathComponent(), settings: settings)
+        let source: String
+        if file.pathExtension.lowercased() == "mermaid" {
+            let longestRun = markdown.split(whereSeparator: { $0 != "`" }).map(\.count).max() ?? 0
+            let fence = String(repeating: "`", count: max(3, longestRun + 1))
+            source = fence + "mermaid\n" + markdown + "\n" + fence
+        } else { source = markdown }
+        return try render(markdown: source, title: file.lastPathComponent, baseURL: file.deletingLastPathComponent(), settings: settings)
     }
 
     func render(markdown: String, title: String, baseURL: URL, settings: PreviewSettings) throws -> String {
@@ -38,18 +44,30 @@ final class MarkdownRenderer {
                 throw RenderError.parserFailure
             }
         }
-        markdown.withCString { cmark_parser_feed(parser, $0, markdown.utf8.count) }
+        let mathMarkup = MathMarkup(markdown)
+        mathMarkup.markdown.withCString { cmark_parser_feed(parser, $0, mathMarkup.markdown.utf8.count) }
         guard let document = cmark_parser_finish(parser) else { throw RenderError.parserFailure }
         defer { cmark_node_free(document) }
         guard let rendered = cmark_render_html(document, options, cmark_parser_get_syntax_extensions(parser)) else {
             throw RenderError.parserFailure
         }
         defer { free(rendered) }
-        var body = String(cString: rendered)
+        var body = mathMarkup.restore(in: String(cString: rendered))
         body = try embedLocalImages(in: body, baseURL: baseURL)
         let css = try resource("preview.css")
         let highlighter = try resource("highlight.min.js")
+        let hasMath = body.contains("class=\"math-expression") || body.contains("class=\"language-math\"")
+        let hasMermaid = body.contains("class=\"language-mermaid\"")
+        let mathLibrary = hasMath ? try resource("mathjax-tex-svg.js") : ""
+        let mermaidLibrary = hasMermaid ? try resource("mermaid.min.js") : ""
+        let runtime = try resource("preview.js")
         let nonce = UUID().uuidString
+        func script(_ source: String) -> String {
+            // Avoid closing the HTML script element from a library string literal.
+            let escaped = source.replacingOccurrences(of: "</script", with: "<\\/script", options: .caseInsensitive)
+            return "<script nonce=\"\(nonce)\">\(escaped)</script>"
+        }
+        let mathConfig = #"window.MathJax = {startup:{typeset:false}, tex:{packages:['base','ams','newcommand','configmacros','boldsymbol','mathtools','cases','cancel','color','unicode'], maxBuffer:20480, maxMacros:1000, formatError:(_jax,error)=>{throw error}}, svg:{fontCache:'local'}, options:{enableMenu:false}, loader:{load:[]}};"#
         let theme = ["auto", "light", "dark"].contains(settings.appearance) ? settings.appearance : "auto"
         return """
         <!doctype html>
@@ -61,8 +79,10 @@ final class MarkdownRenderer {
         :root { --font-size: \(min(24, max(12, settings.fontSize)))px; --content-width: \(min(1400, max(480, settings.contentWidth)))px; }
         </style></head>
         <body><main class="markdown-body">\(body)</main>
-        <script nonce="\(nonce)">\(highlighter)</script>
-        <script nonce="\(nonce)">hljs.highlightAll();</script>
+        \(script(highlighter))
+        \(hasMath ? script(mathConfig) + script(mathLibrary) : "")
+        \(hasMermaid ? script(mermaidLibrary) : "")
+        \(script(runtime))
         </body></html>
         """
     }

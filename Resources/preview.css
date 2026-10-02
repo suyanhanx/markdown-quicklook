@@ -34,3 +34,13 @@ input[type=checkbox] { margin:0 .5em 0 0; accent-color:var(--link); }
 @media(prefers-color-scheme:dark) { :root:not([data-theme=light]) .hljs-string { color:#a5d6ff; } :root:not([data-theme=light]) .hljs-title { color:#d2a8ff; } }
 :root[data-theme=dark] .hljs-string { color:#a5d6ff; } :root[data-theme=dark] .hljs-title { color:#d2a8ff; }
 @media(max-width:600px) { body { padding:20px; } }
+.math-block { display:block; overflow-x:auto; padding:12px 0; text-align:center; }
+.math-inline { display:inline; }
+mjx-container { max-width:100%; }
+.mermaid-diagram { margin:20px 0; padding:16px; border:1px solid var(--line); border-radius:8px; overflow-x:auto; text-align:center; }
+.mermaid-diagram svg { max-width:100%; height:auto; }
+.render-error { display:block; margin:12px 0; padding:12px; border:1px solid #d1242f; border-radius:6px; }
+.render-error strong { display:block; color:#d1242f; font-size:.9em; }
+.render-error code { display:block; margin-top:8px; white-space:pre-wrap; }
+/* Keep MathJax's accessibility MathML available to readers without a second visible formula. */
+mjx-assistive-mml { position:absolute!important; clip:rect(1px,1px,1px,1px); padding:1px 0 0!important; border:0!important; height:1px!important; width:1px!important; overflow:hidden!important; display:block!important; }
