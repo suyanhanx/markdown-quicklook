@@ -22,3 +22,6 @@ done
 printf 'WebKit: zoom, scrolling, size limits, cancellation and timeout verified.\n'
 swiftc -parse-as-library Shared/PreviewWork.swift Tests/RequestDeadline.swift -o build/request-deadline-tests
 build/request-deadline-tests
+
+build/web-rendering-tests build/skeleton.html > build/web-skeleton-result.json
+printf 'WebKit: queued and active skeletons, progress and completion cleanup verified.\n'

@@ -23,12 +23,37 @@ final class WebRenderingTest: NSObject, NSApplicationDelegate, WKNavigationDeleg
             if CommandLine.arguments[1].contains("timeout.html") {
                 html = html.replacingOccurrences(of: "window.previewRenderPromise =", with: "window.mermaid.parse = () => new Promise(() => {}); window.previewRenderPromise =")
             }
+            if CommandLine.arguments[1].contains("skeleton.html") {
+                html = html.replacingOccurrences(of: "window.previewRenderPromise =", with: "const realParse = window.mermaid.parse.bind(window.mermaid); window.mermaid.parse = async (...args) => {await new Promise(r=>setTimeout(r,600)); return realParse(...args);}; window.previewRenderPromise =")
+            }
             webView.loadHTMLString(html, baseURL: nil)
         } catch { print(error); exit(1) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 45) { print("Web rendering timed out"); exit(1) }
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if CommandLine.arguments[1].contains("skeleton.html") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                webView.takeSnapshot(with: nil) { image, error in
+                    guard error == nil, let image, let tiff = image.tiffRepresentation,
+                          let bitmap = NSBitmapImageRep(data: tiff),
+                          let png = bitmap.representation(using: .png, properties: [:]) else { print("Skeleton snapshot failed"); exit(1) }
+                    do { try png.write(to: URL(fileURLWithPath: "build/skeleton-preview.png")) }
+                    catch { print("Skeleton snapshot save failed: \(error)"); exit(1) }
+                }
+            }
+        }
         webView.callAsyncJavaScript("""
+        let skeletonBefore = null;
+        if (document.title === 'Skeleton test') {
+          await new Promise(resolve=>setTimeout(resolve,100));
+          skeletonBefore = {
+            total:document.querySelectorAll('.render-placeholder[aria-busy="true"]').length,
+            active:document.querySelectorAll('.placeholder-active').length,
+            queued:Array.from(document.querySelectorAll('.placeholder-label')).filter(x=>x.textContent.includes('排队中')).length,
+            raw:document.querySelectorAll('pre > code.language-mermaid').length,
+            text:document.querySelector('.preview-progress-label')?.textContent
+          };
+        }
         await window.previewRenderPromise;
         await Promise.all(Array.from(document.images).map(img => img.complete ? Promise.resolve() : new Promise(resolve => {img.addEventListener('load',resolve,{once:true}); img.addEventListener('error',resolve,{once:true});})));
         const viewport = document.querySelector('.diagram-viewport');
@@ -48,7 +73,8 @@ final class WebRenderingTest: NSObject, NSApplicationDelegate, WKNavigationDeleg
           buttons.find(b=>b.textContent === '适应宽度').click();
           fitWorks = svg.getBoundingClientRect().width <= viewport.clientWidth + 1;
         }
-        return {state: window.previewRenderState, zoomWorks, scrollWorks, fitWorks,
+        return {state: window.previewRenderState, skeletonBefore,
+                skeletonsLeft:document.querySelectorAll('.render-placeholder,[aria-busy="true"]').length, zoomWorks, scrollWorks, fitWorks,
                 highlightSkipped:Array.from(document.querySelectorAll('.html-notice')).some(x=>x.textContent.includes('跳过高亮')),
                 text:document.querySelector('main').textContent.slice(0,2000),
                 alerts:document.querySelectorAll('.markdown-alert').length,
@@ -81,7 +107,12 @@ final class WebRenderingTest: NSObject, NSApplicationDelegate, WKNavigationDeleg
                           let errors = dictionary["errors"] as? Int,
                           let resources = dictionary["resources"] as? [String],
                           dictionary["visibleAssistiveMath"] as? Bool == false, dictionary["pending"] as? Bool == false else { exit(1) }
+                    guard dictionary["skeletonsLeft"] as? Int == 0 else { exit(1) }
                     let path = CommandLine.arguments[1]
+                    if path.contains("skeleton.html") {
+                        guard let before = dictionary["skeletonBefore"] as? [String:Any] else { exit(1) }
+                        exit(before["total"] as? Int == 2 && before["active"] as? Int == 1 && before["queued"] as? Int == 1 && before["raw"] as? Int == 0 && (before["text"] as? String)?.contains("0 / 2") == true && diagrams == 2 && errors == 0 ? 0 : 1)
+                    }
                     if path.contains("navigation.html") {
                         exit(diagrams == 2 && errors == 0 && dictionary["zoomWorks"] as? Bool == true && dictionary["scrollWorks"] as? Bool == true && dictionary["fitWorks"] as? Bool == true ? 0 : 1)
                     }

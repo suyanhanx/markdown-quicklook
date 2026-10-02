@@ -122,3 +122,6 @@ let cumulative = try renderer.render(markdown: "![a](large.svg)\n![b](large.svg)
 check(cumulative.contains("累计 20 MB"), "Cumulative image byte limit is visible")
 check(cumulative.components(separatedBy: "data:image/svg+xml;base64,").count == 3, "Only two 7 MB images are embedded")
 print("Passed \(checks) total renderer checks including pixel and cumulative image limits")
+
+let skeletonDemo = try renderer.render(markdown: "# Skeleton test\n\n```mermaid\nflowchart LR\nA --> B\n```\n\n```mermaid\nflowchart LR\nC --> D\n```", title: "Skeleton test", baseURL: root, settings: PreviewSettings())
+try skeletonDemo.write(to: root.appendingPathComponent("build/skeleton.html"), atomically: true, encoding: .utf8)

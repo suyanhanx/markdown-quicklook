@@ -62,3 +62,21 @@ h1:hover .heading-anchor,h2:hover .heading-anchor,h3:hover .heading-anchor,.head
 .alert-note { --alert-color:var(--link); } .alert-tip { --alert-color:#2da44e; } .alert-important { --alert-color:#a371f7; }
 .alert-warning { --alert-color:#bf8700; } .alert-caution { --alert-color:#e5534b; }
 .html-notice { padding:8px 12px; border:1px solid var(--line); color:var(--muted); font-size:.85em; border-radius:6px; }
+
+/* Reserve space immediately; queued content never appears as a blank box or raw source. */
+.render-placeholder { min-height:160px; padding:18px; text-align:left; border:1px solid var(--line); border-radius:8px; background:var(--code); }
+.placeholder-label { display:block; color:var(--muted); font-size:13px; font-weight:500; margin-bottom:16px; }
+.placeholder-active .placeholder-label { color:var(--link); }
+.placeholder-bars { display:block; }
+.placeholder-bars>span { display:block; height:12px; margin:12px 0; border-radius:5px; background:var(--line); opacity:.45; width:85%; }
+.placeholder-bars>span:nth-child(2) { width:62%; }
+.placeholder-bars>span:nth-child(3) { width:74%; }
+.placeholder-active .placeholder-bars { animation:placeholder-pulse 1.4s ease-in-out infinite alternate; }
+.math-block.render-placeholder { min-height:110px; }
+.placeholder-inline { display:inline-flex; vertical-align:middle; align-items:center; gap:8px; min-height:0; padding:2px 8px; }
+.placeholder-inline .placeholder-label { display:inline; margin:0; white-space:nowrap; }
+.placeholder-inline .placeholder-bars { display:inline-block; width:32px; }
+.placeholder-inline .placeholder-bars>span { margin:0; width:100%; height:8px; }
+.preview-progress { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+@keyframes placeholder-pulse { from { opacity:.4; } to { opacity:1; } }
+@media(prefers-reduced-motion:reduce) { .placeholder-active .placeholder-bars { animation:none; } }

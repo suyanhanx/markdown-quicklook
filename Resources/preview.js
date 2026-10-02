@@ -9,8 +9,38 @@ function renderError(target, kind, source, error) {
   const code = document.createElement('code');
   code.textContent = source;
   box.append(label, code);
+  pendingRenders.delete(target);
   target.replaceWith(box);
+  updateProgress();
   window.previewRenderState.errors.push({kind, message: label.textContent});
+}
+const pendingRenders = new Set();
+const pendingSources = new WeakMap();
+let renderTotal = 0;
+function updateProgress() {
+  const label = document.querySelector('.preview-progress-label');
+  if (label) label.textContent = renderTotal ? `图表与公式：已处理 ${renderTotal - pendingRenders.size} / ${renderTotal}` : '正在处理代码…';
+}
+function skeleton(node, kind, inline = false, source = '') {
+  node.classList.add('render-placeholder');
+  if (inline) node.classList.add('placeholder-inline');
+  node.setAttribute('aria-busy', 'true');
+  const label = document.createElement('span'); label.className = 'placeholder-label'; label.textContent = `${kind} · 排队中`;
+  const bars = document.createElement('span'); bars.className = 'placeholder-bars'; bars.setAttribute('aria-hidden', 'true');
+  for (let i = 0; i < (inline ? 1 : 3); i++) bars.append(document.createElement('span'));
+  node.replaceChildren(label, bars);
+  node.dataset.renderKind = kind;
+  pendingRenders.add(node); pendingSources.set(node, source); renderTotal++;
+}
+function activateSkeleton(node) {
+  node.classList.add('placeholder-active');
+  node.querySelector('.placeholder-label').textContent = `${node.dataset.renderKind} · 正在渲染…`;
+}
+function finishSkeleton(node) {
+  pendingRenders.delete(node);
+  node.classList.remove('render-placeholder', 'placeholder-inline', 'placeholder-active');
+  node.removeAttribute('aria-busy'); delete node.dataset.renderKind;
+  updateProgress();
 }
 function decodeTex(base64) {
   return new TextDecoder().decode(Uint8Array.from(atob(base64), c => c.charCodeAt(0)));
@@ -78,8 +108,9 @@ window.previewRenderPromise = (async () => {
   }
   const progress = document.createElement('div'); progress.className = 'preview-progress';
   const cancel = document.createElement('button'); cancel.textContent = '取消渲染'; cancel.type = 'button'; cancel.addEventListener('click', window.cancelPreview);
-  progress.append('正在处理图表与代码… ', cancel); main.prepend(progress);
-  await checkpoint();
+  const progressLabel = document.createElement('span'); progressLabel.className = 'preview-progress-label';
+  progressLabel.setAttribute('role', 'status');
+  progress.append(progressLabel, cancel); main.prepend(progress);
   document.querySelectorAll('img').forEach(img => {
     const fail = () => {
       if (!img.isConnected) return;
@@ -116,25 +147,35 @@ window.previewRenderPromise = (async () => {
     const source = code.textContent; code.parentElement.replaceWith(node);
     mathItems.push({node, source, display: true});
   });
+  mathItems.forEach(item => skeleton(item.node, '公式', !item.display, item.source));
+  const diagrams = Array.from(document.querySelectorAll('pre > code.language-mermaid')).map(code => {
+    const source = code.textContent;
+    const target = document.createElement('div'); target.className = 'mermaid-diagram';
+    code.parentElement.replaceWith(target); skeleton(target, '图表', false, source);
+    return {source, target};
+  });
+  updateProgress();
+  await checkpoint();
   if (mathItems.length) {
     try {
       if (!window.MathJax?.startup?.promise) throw new Error('MathJax 资源未能启动');
       await bounded(MathJax.startup.promise, 5000);
       for (const [index, item] of mathItems.entries()) {
         try {
+          activateSkeleton(item.node);
           await checkpoint();
           if (index >= 200 || item.source.length > 10000) throw new Error('公式超过限制：最多 200 项，单项 10000 字符');
           const result = MathJax.tex2svg(item.source, {display: item.display});
           const errorNode = result.querySelector('[data-mjx-error]');
           if (errorNode) throw new Error(errorNode.getAttribute('data-mjx-error'));
           item.node.replaceChildren(result);
+          finishSkeleton(item.node);
           item.node.setAttribute('aria-label', item.source);
           window.previewRenderState.math++;
         } catch (error) { renderError(item.node, '公式', item.source, error); }
       }
     } catch (error) { mathItems.forEach(item => renderError(item.node, '公式', item.source, error)); }
   }
-  const diagrams = Array.from(document.querySelectorAll('pre > code.language-mermaid'));
   if (diagrams.length) {
     try {
       if (!window.mermaid) throw new Error('Mermaid 资源未能启动');
@@ -142,10 +183,11 @@ window.previewRenderPromise = (async () => {
       const dark = theme === 'dark' || (theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
       mermaid.initialize({startOnLoad:false, securityLevel:'strict', secure:['securityLevel','maxTextSize','maxEdges','startOnLoad','suppressErrorRendering'], theme:dark ? 'dark' : 'default', suppressErrorRendering:true, maxTextSize:20000, maxEdges:200, flowchart:{htmlLabels:false}});
       for (let i = 0; i < diagrams.length; i++) {
-        const code = diagrams[i], source = code.textContent;
-        const target = document.createElement('div'); target.className = 'mermaid-diagram';
-        code.parentElement.replaceWith(target);
+        const {source, target} = diagrams[i];
         try {
+          activateSkeleton(target);
+          // Let WebKit paint the active state before entering synchronous layout.
+          await new Promise(resolve => setTimeout(resolve, 16));
           await checkpoint();
           if (i >= 20 || source.length > 20000 || source.split('\n').length > 400) throw new Error('图表超过限制：最多 20 张，单张 20000 字符、400 行、200 条边');
           // Parse first so invalid input never leaves Mermaid's temporary error SVG behind.
@@ -155,10 +197,11 @@ window.previewRenderPromise = (async () => {
           await checkpoint();
           target.innerHTML = svg;
           diagramControls(target);
+          finishSkeleton(target);
           window.previewRenderState.mermaid++;
         } catch (error) { renderError(target, 'Mermaid', source, error); }
       }
-    } catch (error) { diagrams.forEach(code => renderError(code.parentElement, 'Mermaid', code.textContent, error)); }
+    } catch (error) { diagrams.forEach(({target, source}) => { if (pendingRenders.has(target)) renderError(target, 'Mermaid', source, error); }); }
   }
   for (const code of document.querySelectorAll('pre > code:not(.language-mermaid):not(.language-math)')) {
     await checkpoint();
@@ -193,6 +236,7 @@ window.previewRenderPromise = (async () => {
   document.documentElement.dataset.renderComplete = 'true';
   return window.previewRenderState;
 })().catch(error => {
+  for (const target of Array.from(pendingRenders)) renderError(target, target.dataset.renderKind || '内容', pendingSources.get(target) || '', error);
   const node = document.createElement('span'); document.querySelector('main').prepend(node);
   renderError(node, '预览', '', error);
   document.querySelector('.preview-progress')?.remove();
