@@ -4,13 +4,15 @@
 
 ## 使用
 
-打开 `/Applications/Markdown Quick Look.app` 调整字号、内容宽度和深浅色主题。设置自动保存，关闭并重新打开预览后生效。
+打开 `/Applications/Markdown Quick Look.app` 调整字号、内容宽度、深浅色主题，以及目录、HTML 排版和远程图片开关。设置自动保存，关闭并重新打开预览后生效。
 
-在 Finder 里选择 `.md` / `.markdown` 文件，按空格。扩展标识为 `local.yan.MarkdownQuickLook.Preview`。
+在 Finder 里选择 `.md` / `.markdown` / `.mermaid` 文件或 `.textbundle` 包，按空格。扩展标识为 `local.yan.MarkdownQuickLook.Preview`。
 
 已实现：UTF-8 中文、GitHub 风格表格、任务列表、删除线、自动链接、脚注、代码高亮、本地图片、Mermaid 图表与 LaTeX 数学公式。解析库为 cmark-gfm，代码高亮为 highlight.js 11.11.1，图表为 Mermaid 11.12.0，公式为 MathJax 3.2.2 SVG；运行时不下载依赖或字体。
 
-当前范围：不执行原始 HTML；不处理 TextBundle。远程图片显示明确的未加载提示，本地图片读取失败也显示提示。文档限制 20 MB，单张本地图片限制 10 MB。此版本没有复刻原应用所有扩展功能。
+1.2 新增 TextBundle、中文标题锚点、目录、五类 GitHub 提示块、可折叠 YAML 元信息，以及可选的 HTML 排版和远程图片。目录可通过设置或正文中的 `[TOC]` / `[[TOC]]` 启用。YAML 保留原文，不转换成结构化表格。
+
+HTML 与远程图片默认关闭。HTML 开启后由 DOMPurify 3.4.16 清理，不执行脚本；移除内容时显示提示。远程图片关闭或加载失败、本地图片读取失败均显示明确提示。文档限制 20 MB，单张本地图片限制 10 MB。完整对照及未实现项目见 [功能差异表](FEATURES.md)。
 
 ## 构建
 
@@ -35,9 +37,9 @@ qlmanage -r
 
 ## 验证
 
-`Scripts/test.sh` 验证 Markdown 功能、HTML 安全处理、明确错误和连续 101 次渲染。还会启动 WebKit 验证浅色/深色下的 8 个公式、流程图、时序图、错误后的继续渲染，以及零网络请求。产物在 `build/preview.html`、`build/rich-preview.html` 和 `build/web-*-result.json`。
+`Scripts/test.sh` 验证 Markdown 功能、HTML 安全处理、明确错误和连续 101 次渲染。还会启动 WebKit 验证浅色/深色下的 8 个公式、流程图、时序图、错误后的继续渲染，以及默认零网络请求。1.2 共通过 232 项原生渲染检查，并增加 WebKit 对目录、提示块、HTML 清理、TextBundle 和图片失败提示的验证；远程图片开启路径由临时回环 HTTP 服务验证成功图片及 404。产物在 `build/preview.html`、`build/rich-preview.html` 和 `build/web-*-result.json`。
 
-2026-10-02 已在本机完成 Release 构建、签名验证，以及 Finder 中的浅色/深色预览、代码高亮、表格、本地 SVG 图片、脚注、Mermaid 流程图/时序图与数学公式检查。应用设置正确传递到扩展。`qlmanage -p -o` 在本机 ExtensionFoundation 内部崩溃；该命令不作为成功依据，已改用真实 Finder 预览验证。
+2026-10-02 已在本机完成 Release 构建、签名验证，以及 Finder 中的浅色/深色预览、代码高亮、表格、本地 SVG 图片、脚注、Mermaid 流程图/时序图与数学公式检查。1.2 还在实际 Finder 验证了目录跳转、HTML 排版、TextBundle 正文/包内图片/提示块，以及 HTTP 图片成功加载和 404 提示。应用设置正确传递到扩展，测试后目录、HTML、远程图片开关均恢复关闭。`qlmanage -p -o` 在本机 ExtensionFoundation 内部崩溃；该命令不作为成功依据，已改用真实 Finder 预览验证。
 
 ## 代码结构
 
@@ -51,6 +53,7 @@ qlmanage -r
 
 cmark-gfm：见 `Vendor/cmark-gfm/COPYING`（MIT 等上游声明）。
 highlight.js：见 `Resources/highlight-LICENSE.txt`（BSD-3-Clause）。
+DOMPurify：见 `Resources/dompurify-LICENSE.txt`（Apache-2.0 或 MPL-2.0）。
 
 ## 图表和公式
 

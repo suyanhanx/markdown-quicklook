@@ -58,3 +58,23 @@ check(directDiagram.contains("language-mermaid"), "Standalone Mermaid files rend
 let dark = try renderer.render(file: root.appendingPathComponent("Fixtures/rich-preview.md"), settings: PreviewSettings(appearance: "dark"))
 try dark.write(to: root.appendingPathComponent("build/rich-dark.html"), atomically: true, encoding: .utf8)
 print("Passed \(checks) total renderer checks including math preservation")
+
+let bundle = try renderer.render(file: root.appendingPathComponent("Fixtures/Notebook.textbundle"))
+check(bundle.contains("TextBundle 笔记"), "TextBundle body")
+check(bundle.contains("data:image/svg+xml;base64,"), "TextBundle relative image")
+let badBundle = temp.appendingPathComponent("bad.textbundle")
+try FileManager.default.createDirectory(at: badBundle, withIntermediateDirectories: true)
+try Data(#"{"version":2,"type":"net.daringfireball.markdown"}"#.utf8).write(to: badBundle.appendingPathComponent("info.json"))
+do {
+    _ = try renderer.render(file: badBundle)
+    fatalError("Missing bundle body must fail explicitly")
+} catch MarkdownDocument.DocumentError.invalidBundle { checks += 1 }
+let features = try renderer.render(file: root.appendingPathComponent("Fixtures/features.md"), settings: PreviewSettings(showTOC: true, renderHTML: true))
+try features.write(to: root.appendingPathComponent("build/features.html"), atomically: true, encoding: .utf8)
+try bundle.write(to: root.appendingPathComponent("build/textbundle.html"), atomically: true, encoding: .utf8)
+let frontMatter = MarkdownDocument.splitFrontMatter("---\ntitle: value\n---\n# Body")
+check(frontMatter.yaml == "title: value" && frontMatter.body == "# Body", "Front matter is separated from body")
+check(MarkdownDocument.splitFrontMatter("---\nNo closing delimiter").yaml == nil, "Unterminated front matter remains content")
+let remote = try renderer.render(markdown: "![成功](http://127.0.0.1:54321/ok.png)\n\n![失败](http://127.0.0.1:54321/missing.png)", title: "Remote test", baseURL: root, settings: PreviewSettings(loadRemoteImages: true))
+try remote.write(to: root.appendingPathComponent("build/remote-template.html"), atomically: true, encoding: .utf8)
+print("Passed \(checks) total renderer checks including TextBundle and front matter")

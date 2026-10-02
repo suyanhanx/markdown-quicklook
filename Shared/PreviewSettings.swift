@@ -5,6 +5,9 @@ struct PreviewSettings {
     var fontSize: Double = 16
     var contentWidth: Double = 860
     var appearance = "auto"
+    var showTOC = false
+    var renderHTML = false
+    var loadRemoteImages = false
 
     static func load() -> Self {
         let defaults = UserDefaults(suiteName: suite)!
@@ -18,6 +21,9 @@ struct PreviewSettings {
         if let appearance = defaults.string(forKey: "appearance"), ["auto", "light", "dark"].contains(appearance) {
             settings.appearance = appearance
         }
+        settings.showTOC = defaults.bool(forKey: "showTOC")
+        settings.renderHTML = defaults.bool(forKey: "renderHTML")
+        settings.loadRemoteImages = defaults.bool(forKey: "loadRemoteImages")
         return settings
     }
 }

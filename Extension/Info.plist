@@ -37,6 +37,7 @@
 				<string>org.quarto.qmarkdown</string>
 				<string>local.yan.mermaid</string>
 				<string>dyn.ah62d4rv4ge8043pwrzu0w3a</string>
+				<string>org.textbundle.package</string>
 			</array>
 			<key>QLSupportsSearchableItems</key>
 			<false/>

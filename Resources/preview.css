@@ -44,3 +44,15 @@ mjx-container { max-width:100%; }
 .render-error code { display:block; margin-top:8px; white-space:pre-wrap; }
 /* Keep MathJax's accessibility MathML available to readers without a second visible formula. */
 mjx-assistive-mml { position:absolute!important; clip:rect(1px,1px,1px,1px); padding:1px 0 0!important; border:0!important; height:1px!important; width:1px!important; overflow:hidden!important; display:block!important; }
+.front-matter { margin-bottom:24px; border:1px solid var(--line); border-radius:6px; padding:12px; color:var(--muted); }
+.front-matter summary { cursor:pointer; font-weight:600; }
+.front-matter pre { margin:12px 0 0; color:var(--fg); }
+.heading-anchor { margin-left:.4em; opacity:0; font-weight:400; font-size:.8em; }
+h1:hover .heading-anchor,h2:hover .heading-anchor,h3:hover .heading-anchor,.heading-anchor:focus { opacity:1; }
+.document-toc { padding:16px 20px; margin:0 0 24px; background:var(--code); border:1px solid var(--line); border-radius:8px; }
+.document-toc a { display:block; margin-top:6px; }
+.markdown-alert { padding:12px 16px; border-left-color:var(--alert-color); color:var(--fg); background:var(--code); border-radius:0 6px 6px 0; }
+.alert-title { color:var(--alert-color); font-weight:600; margin-bottom:8px; }
+.alert-note { --alert-color:var(--link); } .alert-tip { --alert-color:#2da44e; } .alert-important { --alert-color:#a371f7; }
+.alert-warning { --alert-color:#bf8700; } .alert-caution { --alert-color:#e5534b; }
+.html-notice { padding:8px 12px; border:1px solid var(--line); color:var(--muted); font-size:.85em; border-radius:6px; }

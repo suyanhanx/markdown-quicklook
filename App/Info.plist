@@ -20,6 +20,7 @@
 				<string>net.daringfireball.markdown</string>
 				<string>public.markdown</string>
 				<string>local.yan.mermaid</string>
+				<string>org.textbundle.package</string>
 			</array>
 		</dict>
 	</array>
@@ -63,6 +64,24 @@
 	</array>
 	<key>UTImportedTypeDeclarations</key>
 	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>com.apple.package</string>
+				<string>public.directory</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>TextBundle</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.textbundle.package</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>textbundle</string>
+				</array>
+			</dict>
+		</dict>
 		<dict>
 			<key>UTTypeConformsTo</key>
 			<array>

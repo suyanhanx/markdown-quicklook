@@ -24,7 +24,18 @@ final class WebRenderingTest: NSObject, NSApplicationDelegate, WKNavigationDeleg
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         webView.callAsyncJavaScript("""
         await window.previewRenderPromise;
+        await Promise.all(Array.from(document.images).map(img => img.complete ? Promise.resolve() : new Promise(resolve => {img.addEventListener('load',resolve,{once:true}); img.addEventListener('error',resolve,{once:true});})));
         return {state: window.previewRenderState,
+                alerts:document.querySelectorAll('.markdown-alert').length,
+                headings:Array.from(document.querySelectorAll('h1,h2')).map(x=>x.id),
+                toc:document.querySelectorAll('.document-toc a').length,
+                yaml:document.querySelector('.front-matter code')?.textContent || '',
+                details:!!document.querySelector('details:not(.front-matter) summary'),
+                task:document.querySelector('input[type="checkbox"]')?.disabled === true,
+                unsafe:!!document.querySelector('main script, main iframe, main [onerror], main a[href^="javascript:"]'),
+                pwned:window.PWNED === 1,
+                images:Array.from(document.images).filter(x=>x.naturalWidth>0).length,
+                imageErrors:Array.from(document.querySelectorAll('.image-notice')).filter(x=>x.textContent.includes('图片加载失败')).length,
                 mathSVGs: document.querySelectorAll('mjx-container svg').length,
                 diagramSVGs: document.querySelectorAll('.mermaid-diagram svg').length,
                 errors: document.querySelectorAll('.render-error').length,
@@ -44,7 +55,23 @@ final class WebRenderingTest: NSObject, NSApplicationDelegate, WKNavigationDeleg
                           let diagrams = dictionary["diagramSVGs"] as? Int,
                           let errors = dictionary["errors"] as? Int,
                           let resources = dictionary["resources"] as? [String],
-                          resources.isEmpty, dictionary["visibleAssistiveMath"] as? Bool == false, dictionary["pending"] as? Bool == false else { exit(1) }
+                          dictionary["visibleAssistiveMath"] as? Bool == false, dictionary["pending"] as? Bool == false else { exit(1) }
+                    let path = CommandLine.arguments[1]
+                    if path.contains("remote-live") {
+                        exit(dictionary["images"] as? Int == 1 && dictionary["imageErrors"] as? Int == 1 && resources.count == 2 ? 0 : 1)
+                    }
+                    guard resources.isEmpty else { exit(1) }
+                    if path.contains("features.html") {
+                        guard let headings = dictionary["headings"] as? [String] else { exit(1) }
+                        exit(dictionary["alerts"] as? Int == 5 && dictionary["toc"] as? Int == headings.count &&
+                             headings.contains("中文-标题") && headings.contains("中文-标题-1") &&
+                             dictionary["details"] as? Bool == true && dictionary["task"] as? Bool == true &&
+                             dictionary["unsafe"] as? Bool == false && dictionary["pwned"] as? Bool == false &&
+                             (dictionary["yaml"] as? String)?.contains("title:") == true && math == 1 && errors == 0 ? 0 : 1)
+                    }
+                    if path.contains("textbundle.html") {
+                        exit(dictionary["images"] as? Int == 1 && dictionary["alerts"] as? Int == 1 && errors == 0 ? 0 : 1)
+                    }
                     if CommandLine.arguments[1].contains("rich-dark") {
                         guard dictionary["background"] as? String == "rgb(13, 17, 23)" else { exit(1) }
                     }

@@ -19,7 +19,8 @@ final class MarkdownRenderer {
     let resourceURL: URL
     init(resourceURL: URL) { self.resourceURL = resourceURL }
 
-    func render(file: URL, settings: PreviewSettings = .load()) throws -> String {
+    func render(file requestedFile: URL, settings: PreviewSettings = .load()) throws -> String {
+        let file = try MarkdownDocument.contentURL(for: requestedFile)
         let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         guard size <= 20 * 1024 * 1024 else { throw RenderError.fileTooLarge }
         let data = try Data(contentsOf: file)
@@ -31,12 +32,12 @@ final class MarkdownRenderer {
             let fence = String(repeating: "`", count: max(3, longestRun + 1))
             source = fence + "mermaid\n" + markdown + "\n" + fence
         } else { source = markdown }
-        return try render(markdown: source, title: file.lastPathComponent, baseURL: file.deletingLastPathComponent(), settings: settings)
+        return try render(markdown: source, title: requestedFile.lastPathComponent, baseURL: file.deletingLastPathComponent(), settings: settings)
     }
 
     func render(markdown: String, title: String, baseURL: URL, settings: PreviewSettings) throws -> String {
         _ = Self.registerExtensions
-        let options = CMARK_OPT_DEFAULT | CMARK_OPT_FOOTNOTES | CMARK_OPT_STRIKETHROUGH_DOUBLE_TILDE
+        let options = CMARK_OPT_DEFAULT | CMARK_OPT_FOOTNOTES | CMARK_OPT_STRIKETHROUGH_DOUBLE_TILDE | (settings.renderHTML ? CMARK_OPT_UNSAFE : 0)
         guard let parser = cmark_parser_new(options) else { throw RenderError.parserFailure }
         defer { cmark_parser_free(parser) }
         for name in ["table", "strikethrough", "autolink", "tagfilter", "tasklist"] {
@@ -44,7 +45,8 @@ final class MarkdownRenderer {
                 throw RenderError.parserFailure
             }
         }
-        let mathMarkup = MathMarkup(markdown)
+        let frontMatter = MarkdownDocument.splitFrontMatter(markdown)
+        let mathMarkup = MathMarkup(frontMatter.body)
         mathMarkup.markdown.withCString { cmark_parser_feed(parser, $0, mathMarkup.markdown.utf8.count) }
         guard let document = cmark_parser_finish(parser) else { throw RenderError.parserFailure }
         defer { cmark_node_free(document) }
@@ -53,7 +55,10 @@ final class MarkdownRenderer {
         }
         defer { free(rendered) }
         var body = mathMarkup.restore(in: String(cString: rendered))
-        body = try embedLocalImages(in: body, baseURL: baseURL)
+        body = try embedLocalImages(in: body, baseURL: baseURL, loadRemoteImages: settings.loadRemoteImages)
+        if let yaml = frontMatter.yaml {
+            body = "<details class=\"front-matter\"><summary>YAML 元信息</summary><pre><code class=\"language-yaml\">" + escape(yaml) + "</code></pre></details>" + body
+        }
         let css = try resource("preview.css")
         let highlighter = try resource("highlight.min.js")
         let hasMath = body.contains("class=\"math-expression") || body.contains("class=\"language-math\"")
@@ -61,6 +66,11 @@ final class MarkdownRenderer {
         let mathLibrary = hasMath ? try resource("mathjax-tex-svg.js") : ""
         let mermaidLibrary = hasMermaid ? try resource("mermaid.min.js") : ""
         let runtime = try resource("preview.js")
+        let sanitizer = settings.renderHTML ? try resource("purify.min.js") : ""
+        let encodedBody = Data(body.utf8).base64EncodedString()
+        let initialBody = settings.renderHTML ? "正在处理 HTML…" : body
+        let bootstrap = settings.renderHTML ? "window.previewHTML = '\(encodedBody)';" : ""
+        let imageSources = settings.loadRemoteImages ? "data: https: http:" : "data:"
         let nonce = UUID().uuidString
         func script(_ source: String) -> String {
             // Avoid closing the HTML script element from a library string literal.
@@ -73,12 +83,13 @@ final class MarkdownRenderer {
         <!doctype html>
         <html lang="zh" data-theme="\(theme)">
         <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src 'nonce-\(nonce)'; base-uri 'none'; form-action 'none'">
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src \(imageSources); script-src 'nonce-\(nonce)'; base-uri 'none'; form-action 'none'">
         <title>\(escape(title))</title>
         <style>\(css)
         :root { --font-size: \(min(24, max(12, settings.fontSize)))px; --content-width: \(min(1400, max(480, settings.contentWidth)))px; }
         </style></head>
-        <body><main class="markdown-body">\(body)</main>
+        <body data-toc="\(settings.showTOC ? "true" : "false")"><main class="markdown-body">\(initialBody)</main>
+        \(settings.renderHTML ? script(sanitizer) + script(bootstrap) : "")
         \(script(highlighter))
         \(hasMath ? script(mathConfig) + script(mathLibrary) : "")
         \(hasMermaid ? script(mermaidLibrary) : "")
@@ -93,14 +104,15 @@ final class MarkdownRenderer {
         return try String(contentsOf: url, encoding: .utf8)
     }
 
-    private func embedLocalImages(in html: String, baseURL: URL) throws -> String {
-        let pattern = try NSRegularExpression(pattern: #"<img\b[^>]*\bsrc="([^"]*)"[^>]*>"#)
+    private func embedLocalImages(in html: String, baseURL: URL, loadRemoteImages: Bool) throws -> String {
+        let pattern = try NSRegularExpression(pattern: #"<img\b[^>]*\bsrc\s*=\s*(["'])(.*?)\1[^>]*>"#, options: [.caseInsensitive])
         var result = html
         for match in pattern.matches(in: html, range: NSRange(html.startIndex..., in: html)).reversed() {
-            guard let sourceRange = Range(match.range(at: 1), in: html), let tagRange = Range(match.range, in: html) else { continue }
+            guard let sourceRange = Range(match.range(at: 2), in: html), let tagRange = Range(match.range, in: html) else { continue }
             let source = unescape(String(html[sourceRange]))
             if source.hasPrefix("data:image/") { continue }
             if source.hasPrefix("https:") || source.hasPrefix("http:") || source.hasPrefix("//") {
+                if loadRemoteImages { continue }
                 result.replaceSubrange(tagRange, with: "<span class=\"image-notice\">远程图片未加载：\(escape(source))</span>")
                 continue
             }
