@@ -26,6 +26,9 @@ final class WebRenderingTest: NSObject, NSApplicationDelegate, WKNavigationDeleg
             if CommandLine.arguments[1].contains("skeleton.html") {
                 html = html.replacingOccurrences(of: "window.previewRenderPromise =", with: "const realParse = window.mermaid.parse.bind(window.mermaid); window.mermaid.parse = async (...args) => {await new Promise(r=>setTimeout(r,600)); return realParse(...args);}; window.previewRenderPromise =")
             }
+            if CommandLine.arguments[1].contains("scrollpause.html") {
+                html = html.replacingOccurrences(of: "window.previewRenderPromise =", with: "window.parseStartTimes = []; window.pauseTestStarted = performance.now(); const originalParse = mermaid.parse.bind(mermaid); mermaid.parse = (...args) => {window.parseStartTimes.push(performance.now()-window.pauseTestStarted); return originalParse(...args);}; window.dispatchEvent(new Event('scroll')); const scrolling = setInterval(()=>window.dispatchEvent(new Event('scroll')),30); setTimeout(()=>clearInterval(scrolling),300); window.previewRenderPromise =")
+            }
             webView.loadHTMLString(html, baseURL: nil)
         } catch { print(error); exit(1) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 45) { print("Web rendering timed out"); exit(1) }
@@ -61,7 +64,7 @@ final class WebRenderingTest: NSObject, NSApplicationDelegate, WKNavigationDeleg
         let zoomWorks = false, scrollWorks = false, fitWorks = false;
         if (toolbar) {
           const buttons = Array.from(toolbar.querySelectorAll('button'));
-          const svg = viewport.querySelector('svg');
+          const svg = viewport.querySelector('.diagram-image');
           buttons.find(b=>b.textContent === '实际大小').click();
           const before = svg.getBoundingClientRect().width;
           buttons.find(b=>b.textContent === '放大').click();
@@ -73,7 +76,14 @@ final class WebRenderingTest: NSObject, NSApplicationDelegate, WKNavigationDeleg
           buttons.find(b=>b.textContent === '适应宽度').click();
           fitWorks = svg.getBoundingClientRect().width <= viewport.clientWidth + 1;
         }
-        return {state: window.previewRenderState, skeletonBefore,
+        const completed = Array.from(document.querySelectorAll('.diagram-image,.math-image'));
+        const sources = completed.map(x=>x.src);
+        for (const y of [100000,0,50000,0,100000,0]) {
+          window.scrollTo(0,y);
+          await new Promise(resolve=>setTimeout(resolve,20));
+        }
+        const retainedAfterScroll = completed.every((x,i)=>x.isConnected && x.complete && x.naturalWidth > 0 && x.src === sources[i]);
+        return {parseStartTimes:window.parseStartTimes || [], retainedAfterScroll, domNodes:document.querySelectorAll('*').length, svgNodes:document.querySelectorAll('svg *').length, state: window.previewRenderState, skeletonBefore,
                 skeletonsLeft:document.querySelectorAll('.render-placeholder,[aria-busy="true"]').length, zoomWorks, scrollWorks, fitWorks,
                 highlightSkipped:Array.from(document.querySelectorAll('.html-notice')).some(x=>x.textContent.includes('跳过高亮')),
                 text:document.querySelector('main').textContent.slice(0,2000),
@@ -85,14 +95,14 @@ final class WebRenderingTest: NSObject, NSApplicationDelegate, WKNavigationDeleg
                 task:document.querySelector('input[type="checkbox"]')?.disabled === true,
                 unsafe:!!document.querySelector('main script, main iframe, main [onerror], main a[href^="javascript:"]'),
                 pwned:window.PWNED === 1,
-                images:Array.from(document.images).filter(x=>x.naturalWidth>0).length,
+                images:Array.from(document.images).filter(x=>x.naturalWidth>0 && !x.matches('.math-image,.diagram-image')).length,
                 imageErrors:Array.from(document.querySelectorAll('.image-notice')).filter(x=>x.textContent.includes('图片加载失败')).length,
-                mathSVGs: document.querySelectorAll('mjx-container svg').length,
-                diagramSVGs: document.querySelectorAll('.mermaid-diagram svg').length,
+                mathSVGs: document.querySelectorAll('.math-image').length,
+                diagramSVGs: document.querySelectorAll('.diagram-image').length,
                 errors: document.querySelectorAll('.render-error').length,
                 background: getComputedStyle(document.body).backgroundColor,
                 visibleAssistiveMath: Array.from(document.querySelectorAll('mjx-assistive-mml')).some(x=>getComputedStyle(x).position !== 'absolute'),
-                resources: performance.getEntriesByType('resource').map(x=>x.name),
+                resources: performance.getEntriesByType('resource').map(x=>x.name).filter(x=>!x.startsWith('data:')),
                 codeLiteral: Array.from(document.querySelectorAll('code')).some(x=>x.textContent.includes('$x_i$')),
                 pending: document.querySelector('main').textContent.includes('正在渲染公式')};
         """, arguments: [:], in: nil, in: .page) { result in
@@ -107,8 +117,13 @@ final class WebRenderingTest: NSObject, NSApplicationDelegate, WKNavigationDeleg
                           let errors = dictionary["errors"] as? Int,
                           let resources = dictionary["resources"] as? [String],
                           dictionary["visibleAssistiveMath"] as? Bool == false, dictionary["pending"] as? Bool == false else { exit(1) }
+                    guard dictionary["retainedAfterScroll"] as? Bool == true else { exit(1) }
                     guard dictionary["skeletonsLeft"] as? Int == 0 else { exit(1) }
                     let path = CommandLine.arguments[1]
+                    if path.contains("scrollpause.html") {
+                        guard let starts = dictionary["parseStartTimes"] as? [Double] else { exit(1) }
+                        exit(starts.count == 2 && starts[0] >= 400 && errors == 0 && diagrams == 2 ? 0 : 1)
+                    }
                     if path.contains("skeleton.html") {
                         guard let before = dictionary["skeletonBefore"] as? [String:Any] else { exit(1) }
                         exit(before["total"] as? Int == 2 && before["active"] as? Int == 1 && before["queued"] as? Int == 1 && before["raw"] as? Int == 0 && (before["text"] as? String)?.contains("0 / 2") == true && diagrams == 2 && errors == 0 ? 0 : 1)

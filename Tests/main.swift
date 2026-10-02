@@ -120,8 +120,10 @@ let largeSVG = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1
 try largeSVG.write(to: temp.appendingPathComponent("large.svg"), atomically: true, encoding: .utf8)
 let cumulative = try renderer.render(markdown: "![a](large.svg)\n![b](large.svg)\n![c](large.svg)", title: "", baseURL: temp, settings: PreviewSettings())
 check(cumulative.contains("累计 20 MB"), "Cumulative image byte limit is visible")
-check(cumulative.components(separatedBy: "data:image/svg+xml;base64,").count == 3, "Only two 7 MB images are embedded")
+check(cumulative.components(separatedBy: "src=\"data:image/svg+xml;base64,").count == 3, "Only two 7 MB images are embedded")
 print("Passed \(checks) total renderer checks including pixel and cumulative image limits")
 
 let skeletonDemo = try renderer.render(markdown: "# Skeleton test\n\n```mermaid\nflowchart LR\nA --> B\n```\n\n```mermaid\nflowchart LR\nC --> D\n```", title: "Skeleton test", baseURL: root, settings: PreviewSettings())
 try skeletonDemo.write(to: root.appendingPathComponent("build/skeleton.html"), atomically: true, encoding: .utf8)
+
+try skeletonDemo.replacingOccurrences(of: "<title>Skeleton test</title>", with: "<title>Scroll pause test</title>").write(to: root.appendingPathComponent("build/scrollpause.html"), atomically: true, encoding: .utf8)

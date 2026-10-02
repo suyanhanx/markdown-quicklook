@@ -45,12 +45,19 @@ function finishSkeleton(node) {
 function decodeTex(base64) {
   return new TextDecoder().decode(Uint8Array.from(atob(base64), c => c.charCodeAt(0)));
 }
-const previewControl = {cancelled:false, deadline:performance.now() + 30000};
+const previewControl = {cancelled:false, deadline:performance.now() + 30000, lastScroll:-Infinity};
 window.cancelPreview = () => { previewControl.cancelled = true; };
 addEventListener('pagehide', window.cancelPreview, {once:true});
+addEventListener('scroll', () => { previewControl.lastScroll = performance.now(); }, {capture:true, passive:true});
 async function checkpoint() {
   await new Promise(resolve => setTimeout(resolve, 0));
   if (previewControl.cancelled) throw new Error('预览渲染已取消');
+  const pausedAt = performance.now();
+  while (performance.now() - previewControl.lastScroll < 160) {
+    if (previewControl.cancelled) throw new Error('预览渲染已取消');
+    await new Promise(resolve => setTimeout(resolve, 40));
+  }
+  previewControl.deadline += performance.now() - pausedAt;
   if (performance.now() > previewControl.deadline) throw new Error('预览渲染超过 30 秒，已停止');
 }
 async function bounded(promise, milliseconds) {
@@ -63,10 +70,22 @@ async function bounded(promise, milliseconds) {
     })]);
   } finally { clearTimeout(timer); clearInterval(cancellationTimer); }
 }
-function diagramControls(target) {
-  const svg = target.querySelector('svg'), view = svg?.viewBox?.baseVal;
-  if (!view || !view.width || !view.height) throw new Error('图表缺少有效尺寸');
-  const width = view.width, height = view.height;
+async function svgImage(svg, label) {
+  const image = new Image();
+  image.alt = label;
+  image.decoding = 'async';
+  // Self-contained SVG images retain vector zoom while removing their paths/text
+  // from the page's live layout tree. Decode before replacing the placeholder.
+  const serialized = new XMLSerializer().serializeToString(svg);
+  const bytes = new TextEncoder().encode(serialized);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 32768) binary += String.fromCharCode(...bytes.subarray(i, i + 32768));
+  image.src = `data:image/svg+xml;base64,${btoa(binary)}`;
+  await bounded(image.decode(), 5000);
+  if (!image.naturalWidth || !image.naturalHeight) throw new Error('图形图像解码失败');
+  return image;
+}
+function diagramControls(target, svg, width, height) {
   const bar = document.createElement('div'); bar.className = 'diagram-toolbar'; bar.setAttribute('role', 'group'); bar.setAttribute('aria-label', '图表缩放');
   const viewport = document.createElement('div'); viewport.className = 'diagram-viewport'; viewport.tabIndex = 0; viewport.setAttribute('aria-label', '图表，可横向滚动');
   svg.removeAttribute('width'); svg.removeAttribute('height'); svg.style.maxWidth = 'none';
@@ -168,7 +187,16 @@ window.previewRenderPromise = (async () => {
           const result = MathJax.tex2svg(item.source, {display: item.display});
           const errorNode = result.querySelector('[data-mjx-error]');
           if (errorNode) throw new Error(errorNode.getAttribute('data-mjx-error'));
-          item.node.replaceChildren(result);
+          const svg = result.querySelector('svg');
+          if (!svg) throw new Error('公式缺少 SVG 图形');
+          svg.style.color = getComputedStyle(item.node).color;
+          const image = await svgImage(svg, item.source);
+          image.className = 'math-image';
+          image.style.width = svg.getAttribute('width');
+          image.style.height = svg.getAttribute('height');
+          image.style.verticalAlign = svg.style.verticalAlign;
+          await checkpoint();
+          item.node.replaceChildren(image);
           finishSkeleton(item.node);
           item.node.setAttribute('aria-label', item.source);
           window.previewRenderState.math++;
@@ -195,8 +223,15 @@ window.previewRenderPromise = (async () => {
           await checkpoint();
           const {svg} = await bounded(mermaid.render(`diagram-${i}`, source), 5000);
           await checkpoint();
-          target.innerHTML = svg;
-          diagramControls(target);
+          const parsed = new DOMParser().parseFromString(svg, 'image/svg+xml');
+          const graphic = parsed.documentElement, view = graphic.viewBox?.baseVal;
+          if (parsed.querySelector('parsererror') || !view?.width || !view?.height) throw new Error('图表缺少有效 SVG 尺寸');
+          const width = view.width, height = view.height;
+          const image = await svgImage(graphic, `图表 ${i + 1}：${Array.from(graphic.querySelectorAll('text')).map(x=>x.textContent).join('，')}`);
+          image.className = 'diagram-image';
+          await checkpoint();
+          target.replaceChildren(image);
+          diagramControls(target, image, width, height);
           finishSkeleton(target);
           window.previewRenderState.mermaid++;
         } catch (error) { renderError(target, 'Mermaid', source, error); }

@@ -38,7 +38,7 @@ input[type=checkbox] { margin:0 .5em 0 0; accent-color:var(--link); }
 .math-inline { display:inline; }
 mjx-container { max-width:100%; }
 .mermaid-diagram { margin:20px 0; padding:16px; border:1px solid var(--line); border-radius:8px; overflow-x:auto; text-align:center; }
-.mermaid-diagram svg { display:block; margin:auto; }
+.mermaid-diagram .diagram-image { display:block; margin:auto; }
 .diagram-viewport { overflow:auto; max-height:75vh; text-align:left; }
 .diagram-toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; }
 .diagram-toolbar button,.preview-progress button { color:var(--fg); background:var(--code); border:1px solid var(--line); border-radius:5px; padding:5px 10px; cursor:pointer; font:inherit; font-size:13px; }
@@ -80,3 +80,9 @@ h1:hover .heading-anchor,h2:hover .heading-anchor,h3:hover .heading-anchor,.head
 .preview-progress { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 @keyframes placeholder-pulse { from { opacity:.4; } to { opacity:1; } }
 @media(prefers-reduced-motion:reduce) { .placeholder-active .placeholder-bars { animation:none; } }
+
+/* Completed vectors remain decoded images; no offscreen removal or lazy reload. */
+.diagram-image { border-radius:0; max-width:none; }
+.math-image { border-radius:0; max-width:none; display:inline-block; }
+.math-block .math-image { display:block; margin:auto; }
+.diagram-viewport { contain:paint; }

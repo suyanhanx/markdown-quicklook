@@ -25,3 +25,6 @@ build/request-deadline-tests
 
 build/web-rendering-tests build/skeleton.html > build/web-skeleton-result.json
 printf 'WebKit: queued and active skeletons, progress and completion cleanup verified.\n'
+
+build/web-rendering-tests build/scrollpause.html > build/web-scrollpause-result.json
+printf 'WebKit: scrolling defers new work; completed images retain identity and decoded content.\n'
