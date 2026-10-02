@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-swiftc -I Vendor/cmark-gfm/src -I Vendor/cmark-gfm/extensions -I build/cmark/src -I build/cmark/extensions \
-  -import-objc-header Shared/MarkdownBridge.h Shared/PreviewSettings.swift Shared/MathMarkup.swift Shared/MarkdownDocument.swift Shared/MarkdownRenderer.swift Tests/main.swift \
+swiftc -O -I Vendor/cmark-gfm/src -I Vendor/cmark-gfm/extensions -I build/cmark/src -I build/cmark/extensions \
+  -import-objc-header Shared/MarkdownBridge.h Shared/PreviewSettings.swift Shared/MathMarkup.swift Shared/MarkdownDocument.swift Shared/RenderBudget.swift Shared/MarkdownRenderer.swift Tests/main.swift \
   -L build/lib -lcmark-gfm-extensions -lcmark-gfm -o build/renderer-tests-runner
 build/renderer-tests-runner
 
@@ -15,3 +15,10 @@ build/web-rendering-tests build/features.html > build/web-features-result.json
 build/web-rendering-tests build/textbundle.html > build/web-textbundle-result.json
 python3 Tests/remote_images.py
 printf 'WebKit: HTML, TOC, alerts, YAML, TextBundle and opt-in remote images verified.\n'
+
+for fixture in navigation limits cancel timeout; do
+  build/web-rendering-tests "build/$fixture.html" > "build/web-$fixture-result.json"
+done
+printf 'WebKit: zoom, scrolling, size limits, cancellation and timeout verified.\n'
+swiftc -parse-as-library Shared/PreviewWork.swift Tests/RequestDeadline.swift -o build/request-deadline-tests
+build/request-deadline-tests

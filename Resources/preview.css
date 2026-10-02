@@ -38,7 +38,13 @@ input[type=checkbox] { margin:0 .5em 0 0; accent-color:var(--link); }
 .math-inline { display:inline; }
 mjx-container { max-width:100%; }
 .mermaid-diagram { margin:20px 0; padding:16px; border:1px solid var(--line); border-radius:8px; overflow-x:auto; text-align:center; }
-.mermaid-diagram svg { max-width:100%; height:auto; }
+.mermaid-diagram svg { display:block; margin:auto; }
+.diagram-viewport { overflow:auto; max-height:75vh; text-align:left; }
+.diagram-toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; }
+.diagram-toolbar button,.preview-progress button { color:var(--fg); background:var(--code); border:1px solid var(--line); border-radius:5px; padding:5px 10px; cursor:pointer; font:inherit; font-size:13px; }
+.diagram-toolbar button:focus-visible,.diagram-viewport:focus-visible { outline:2px solid var(--link); }
+.diagram-toolbar output { color:var(--muted); font-size:13px; }
+.preview-progress { padding:10px; border:1px solid var(--line); border-radius:6px; margin-bottom:16px; }
 .render-error { display:block; margin:12px 0; padding:12px; border:1px solid #d1242f; border-radius:6px; }
 .render-error strong { display:block; color:#d1242f; font-size:.9em; }
 .render-error code { display:block; margin-top:8px; white-space:pre-wrap; }

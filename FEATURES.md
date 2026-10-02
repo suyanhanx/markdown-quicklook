@@ -1,6 +1,6 @@
 # 功能差异与验证记录
 
-对照：本机 `/Applications/QLMarkdown.app`，版本 **1.5.2**；本项目 **1.2**。日期：2026-10-02。
+对照：本机 `/Applications/QLMarkdown.app`，版本 **1.5.2**；本项目 **1.3**。更新日期：2026-10-03。原版对照日期：2026-10-02。
 
 原版的功能清单取自其随包 README；行为证据来自只读调用原版 CLI（命令行选项仅作用于本次转换，不修改应用设置）。**文档列出、当前配置生效、实际验证通过是不同结论。** 本表不宣称逐项完全等价。
 
@@ -62,3 +62,11 @@ Scripts/test.sh
 测试报告：`build/web-features-result.json`、`build/web-textbundle-result.json`、`build/web-remote-result.json`；已有数学/图表报告为 `build/web-rich-result.json`、`build/web-dark-result.json`、`build/web-error-result.json`。
 
 格式参考：[TextBundle 规范](https://textbundle.org/spec/)；HTML 清理组件：[DOMPurify](https://github.com/cure53/DOMPurify)。
+
+## 1.3 新增（2026-10-03）
+
+- 图表缩放、实际大小、适应宽度、横向滚动；包含 60 节点样例。
+- 请求级 8 秒超时、任务取消、单后台操作限制；网页取消及有限等待。同步调用无法中途抢占，详见 README。
+- 文档、图片字节/像素、图表、公式和代码高亮限制，所有跳过或失败均显示提示。
+- 自绘应用图标、本机架构 DMG、SHA-256 校验、升级备份与失败恢复、移到废纸篓的卸载流程。
+- 开发签名，未公证；其他 Mac 的分发验证不在本轮完成范围内。

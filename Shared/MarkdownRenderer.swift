@@ -1,5 +1,6 @@
 import Foundation
 import UniformTypeIdentifiers
+import ImageIO
 
 /// GFM parsing and preview composition are shared by the extension and verification tool.
 final class MarkdownRenderer {
@@ -19,7 +20,8 @@ final class MarkdownRenderer {
     let resourceURL: URL
     init(resourceURL: URL) { self.resourceURL = resourceURL }
 
-    func render(file requestedFile: URL, settings: PreviewSettings = .load()) throws -> String {
+    func render(file requestedFile: URL, settings: PreviewSettings = .load(), budget: RenderBudget = RenderBudget()) throws -> String {
+        try budget.check()
         let file = try MarkdownDocument.contentURL(for: requestedFile)
         let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         guard size <= 20 * 1024 * 1024 else { throw RenderError.fileTooLarge }
@@ -32,10 +34,12 @@ final class MarkdownRenderer {
             let fence = String(repeating: "`", count: max(3, longestRun + 1))
             source = fence + "mermaid\n" + markdown + "\n" + fence
         } else { source = markdown }
-        return try render(markdown: source, title: requestedFile.lastPathComponent, baseURL: file.deletingLastPathComponent(), settings: settings)
+        return try render(markdown: source, title: requestedFile.lastPathComponent, baseURL: file.deletingLastPathComponent(), settings: settings, budget: budget)
     }
 
-    func render(markdown: String, title: String, baseURL: URL, settings: PreviewSettings) throws -> String {
+    func render(markdown: String, title: String, baseURL: URL, settings: PreviewSettings, budget: RenderBudget = RenderBudget()) throws -> String {
+        try budget.check()
+        guard markdown.utf8.count <= 20 * 1024 * 1024 else { throw RenderError.fileTooLarge }
         _ = Self.registerExtensions
         let options = CMARK_OPT_DEFAULT | CMARK_OPT_FOOTNOTES | CMARK_OPT_STRIKETHROUGH_DOUBLE_TILDE | (settings.renderHTML ? CMARK_OPT_UNSAFE : 0)
         guard let parser = cmark_parser_new(options) else { throw RenderError.parserFailure }
@@ -47,18 +51,28 @@ final class MarkdownRenderer {
         }
         let frontMatter = MarkdownDocument.splitFrontMatter(markdown)
         let mathMarkup = MathMarkup(frontMatter.body)
-        mathMarkup.markdown.withCString { cmark_parser_feed(parser, $0, mathMarkup.markdown.utf8.count) }
+        try budget.check()
+        try mathMarkup.markdown.withCString { bytes in
+            let length = mathMarkup.markdown.utf8.count
+            for offset in stride(from: 0, to: length, by: 65536) {
+                try budget.check()
+                cmark_parser_feed(parser, bytes.advanced(by: offset), min(65536, length - offset))
+            }
+        }
         guard let document = cmark_parser_finish(parser) else { throw RenderError.parserFailure }
         defer { cmark_node_free(document) }
         guard let rendered = cmark_render_html(document, options, cmark_parser_get_syntax_extensions(parser)) else {
             throw RenderError.parserFailure
         }
         defer { free(rendered) }
+        try budget.check()
         var body = mathMarkup.restore(in: String(cString: rendered))
-        body = try embedLocalImages(in: body, baseURL: baseURL, loadRemoteImages: settings.loadRemoteImages)
+        body = try embedLocalImages(in: body, baseURL: baseURL, loadRemoteImages: settings.loadRemoteImages, budget: budget)
         if let yaml = frontMatter.yaml {
             body = "<details class=\"front-matter\"><summary>YAML 元信息</summary><pre><code class=\"language-yaml\">" + escape(yaml) + "</code></pre></details>" + body
         }
+        try budget.check()
+        guard body.utf8.count <= 48 * 1024 * 1024 else { throw RenderBudget.LimitError.outputTooLarge }
         let css = try resource("preview.css")
         let highlighter = try resource("highlight.min.js")
         let hasMath = body.contains("class=\"math-expression") || body.contains("class=\"language-math\"")
@@ -104,10 +118,12 @@ final class MarkdownRenderer {
         return try String(contentsOf: url, encoding: .utf8)
     }
 
-    private func embedLocalImages(in html: String, baseURL: URL, loadRemoteImages: Bool) throws -> String {
+    private func embedLocalImages(in html: String, baseURL: URL, loadRemoteImages: Bool, budget: RenderBudget) throws -> String {
         let pattern = try NSRegularExpression(pattern: #"<img\b[^>]*\bsrc\s*=\s*(["'])(.*?)\1[^>]*>"#, options: [.caseInsensitive])
         var result = html
+        var embeddedBytes = 0
         for match in pattern.matches(in: html, range: NSRange(html.startIndex..., in: html)).reversed() {
+            try budget.check()
             guard let sourceRange = Range(match.range(at: 2), in: html), let tagRange = Range(match.range, in: html) else { continue }
             let source = unescape(String(html[sourceRange]))
             if source.hasPrefix("data:image/") { continue }
@@ -122,10 +138,24 @@ final class MarkdownRenderer {
                   let mime = type.preferredMIMEType,
                   let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
                   size <= 10 * 1024 * 1024,
+                  embeddedBytes + size <= 20 * 1024 * 1024,
                   let data = try? Data(contentsOf: url), data.count <= 10 * 1024 * 1024 else {
-                result.replaceSubrange(tagRange, with: "<span class=\"image-notice\">本地图片无法读取：\(escape(source))</span>")
+                result.replaceSubrange(tagRange, with: "<span class=\"image-notice\">本地图片无法读取或超过限制（单图 10 MB，累计 20 MB）：\(escape(source))</span>")
                 continue
             }
+            if !type.conforms(to: .svg) {
+                guard let image = CGImageSourceCreateWithData(data as CFData, nil),
+                      let properties = CGImageSourceCopyPropertiesAtIndex(image, 0, nil) as? [CFString: Any],
+                      let width = properties[kCGImagePropertyPixelWidth] as? NSNumber,
+                      let height = properties[kCGImagePropertyPixelHeight] as? NSNumber,
+                      width.doubleValue > 0, height.doubleValue > 0,
+                      width.doubleValue * height.doubleValue <= 40_000_000 else {
+                    result.replaceSubrange(tagRange, with: "<span class=\"image-notice\">图片无效或超过 4000 万像素：\(escape(source))</span>")
+                    continue
+                }
+            }
+            embeddedBytes += data.count
+            guard embeddedBytes <= 20 * 1024 * 1024 else { throw RenderBudget.LimitError.outputTooLarge }
             result.replaceSubrange(sourceRange, with: "data:\(mime);base64,\(data.base64EncodedString())")
         }
         return result

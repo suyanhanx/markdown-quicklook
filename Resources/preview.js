@@ -15,6 +15,46 @@ function renderError(target, kind, source, error) {
 function decodeTex(base64) {
   return new TextDecoder().decode(Uint8Array.from(atob(base64), c => c.charCodeAt(0)));
 }
+const previewControl = {cancelled:false, deadline:performance.now() + 30000};
+window.cancelPreview = () => { previewControl.cancelled = true; };
+addEventListener('pagehide', window.cancelPreview, {once:true});
+async function checkpoint() {
+  await new Promise(resolve => setTimeout(resolve, 0));
+  if (previewControl.cancelled) throw new Error('预览渲染已取消');
+  if (performance.now() > previewControl.deadline) throw new Error('预览渲染超过 30 秒，已停止');
+}
+async function bounded(promise, milliseconds) {
+  let timer, cancellationTimer;
+  try {
+    return await Promise.race([promise, new Promise((_, reject) => {
+      cancellationTimer = setInterval(() => { if (previewControl.cancelled) reject(new Error('预览渲染已取消')); }, 50);
+    }), new Promise((_, reject) => {
+      timer = setTimeout(() => { previewControl.cancelled = true; reject(new Error('渲染等待超时，已停止后续处理')); }, milliseconds);
+    })]);
+  } finally { clearTimeout(timer); clearInterval(cancellationTimer); }
+}
+function diagramControls(target) {
+  const svg = target.querySelector('svg'), view = svg?.viewBox?.baseVal;
+  if (!view || !view.width || !view.height) throw new Error('图表缺少有效尺寸');
+  const width = view.width, height = view.height;
+  const bar = document.createElement('div'); bar.className = 'diagram-toolbar'; bar.setAttribute('role', 'group'); bar.setAttribute('aria-label', '图表缩放');
+  const viewport = document.createElement('div'); viewport.className = 'diagram-viewport'; viewport.tabIndex = 0; viewport.setAttribute('aria-label', '图表，可横向滚动');
+  svg.removeAttribute('width'); svg.removeAttribute('height'); svg.style.maxWidth = 'none';
+  viewport.append(svg); target.append(bar, viewport);
+  let scale = 1, fit = true;
+  const label = document.createElement('output'); label.setAttribute('aria-live', 'polite');
+  function apply() {
+    if (fit) scale = Math.min(1, Math.max(0.01, viewport.clientWidth / width));
+    svg.style.width = `${width * scale}px`; svg.style.height = `${height * scale}px`;
+    label.textContent = `${Math.round(scale * 100)}%`;
+  }
+  function button(text, action) { const b = document.createElement('button'); b.type = 'button'; b.textContent = text; b.addEventListener('click', action); bar.append(b); }
+  button('缩小', () => { fit = false; scale = Math.max(.1, scale / 1.25); apply(); });
+  button('放大', () => { fit = false; scale = Math.min(4, scale * 1.25); apply(); });
+  button('实际大小', () => { fit = false; scale = 1; apply(); });
+  button('适应宽度', () => { fit = true; apply(); });
+  bar.append(label); new ResizeObserver(() => { if (fit) apply(); }).observe(viewport); apply();
+}
 window.previewRenderPromise = (async () => {
   const main = document.querySelector('main');
   if (typeof window.previewHTML === 'string') {
@@ -36,6 +76,10 @@ window.previewRenderPromise = (async () => {
     }
     delete window.previewHTML;
   }
+  const progress = document.createElement('div'); progress.className = 'preview-progress';
+  const cancel = document.createElement('button'); cancel.textContent = '取消渲染'; cancel.type = 'button'; cancel.addEventListener('click', window.cancelPreview);
+  progress.append('正在处理图表与代码… ', cancel); main.prepend(progress);
+  await checkpoint();
   document.querySelectorAll('img').forEach(img => {
     const fail = () => {
       if (!img.isConnected) return;
@@ -43,7 +87,10 @@ window.previewRenderPromise = (async () => {
       note.textContent = `图片加载失败：${img.alt || img.getAttribute('src')}`;
       img.replaceWith(note);
     };
-    img.addEventListener('error', fail, {once:true});
+    const timer = setTimeout(fail, 15000);
+    img.addEventListener('load', () => clearTimeout(timer), {once:true});
+    img.addEventListener('error', () => {clearTimeout(timer); fail();}, {once:true});
+    if (img.complete) clearTimeout(timer);
     if (img.complete && img.naturalWidth === 0) fail();
   });
   const titles = {NOTE:'Note',TIP:'Tip',IMPORTANT:'Important',WARNING:'Warning',CAUTION:'Caution'};
@@ -72,9 +119,11 @@ window.previewRenderPromise = (async () => {
   if (mathItems.length) {
     try {
       if (!window.MathJax?.startup?.promise) throw new Error('MathJax 资源未能启动');
-      await MathJax.startup.promise;
-      for (const item of mathItems) {
+      await bounded(MathJax.startup.promise, 5000);
+      for (const [index, item] of mathItems.entries()) {
         try {
+          await checkpoint();
+          if (index >= 200 || item.source.length > 10000) throw new Error('公式超过限制：最多 200 项，单项 10000 字符');
           const result = MathJax.tex2svg(item.source, {display: item.display});
           const errorNode = result.querySelector('[data-mjx-error]');
           if (errorNode) throw new Error(errorNode.getAttribute('data-mjx-error'));
@@ -91,22 +140,32 @@ window.previewRenderPromise = (async () => {
       if (!window.mermaid) throw new Error('Mermaid 资源未能启动');
       const theme = document.documentElement.dataset.theme;
       const dark = theme === 'dark' || (theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
-      mermaid.initialize({startOnLoad:false, securityLevel:'strict', theme:dark ? 'dark' : 'default', suppressErrorRendering:true, maxTextSize:100000, flowchart:{htmlLabels:false}});
+      mermaid.initialize({startOnLoad:false, securityLevel:'strict', secure:['securityLevel','maxTextSize','maxEdges','startOnLoad','suppressErrorRendering'], theme:dark ? 'dark' : 'default', suppressErrorRendering:true, maxTextSize:20000, maxEdges:200, flowchart:{htmlLabels:false}});
       for (let i = 0; i < diagrams.length; i++) {
         const code = diagrams[i], source = code.textContent;
         const target = document.createElement('div'); target.className = 'mermaid-diagram';
         code.parentElement.replaceWith(target);
         try {
+          await checkpoint();
+          if (i >= 20 || source.length > 20000 || source.split('\n').length > 400) throw new Error('图表超过限制：最多 20 张，单张 20000 字符、400 行、200 条边');
           // Parse first so invalid input never leaves Mermaid's temporary error SVG behind.
-          await mermaid.parse(source);
-          const {svg} = await mermaid.render(`diagram-${i}`, source);
+          await bounded(mermaid.parse(source), 5000);
+          await checkpoint();
+          const {svg} = await bounded(mermaid.render(`diagram-${i}`, source), 5000);
+          await checkpoint();
           target.innerHTML = svg;
+          diagramControls(target);
           window.previewRenderState.mermaid++;
         } catch (error) { renderError(target, 'Mermaid', source, error); }
       }
     } catch (error) { diagrams.forEach(code => renderError(code.parentElement, 'Mermaid', code.textContent, error)); }
   }
-  document.querySelectorAll('pre > code:not(.language-mermaid):not(.language-math)').forEach(code => hljs.highlightElement(code));
+  for (const code of document.querySelectorAll('pre > code:not(.language-mermaid):not(.language-math)')) {
+    await checkpoint();
+    if (code.textContent.length > 50000) {
+      const note = document.createElement('p'); note.className = 'html-notice'; note.textContent = '代码超过 50000 字符，保留原文并跳过高亮。'; code.parentElement.before(note);
+    } else hljs.highlightElement(code);
+  }
   const reserved = new Set(Array.from(main.querySelectorAll('[id]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6)')).map(x=>x.id));
   const headings = Array.from(main.querySelectorAll('h1,h2,h3,h4,h5,h6'));
   headings.forEach(heading => {
@@ -130,11 +189,13 @@ window.previewRenderPromise = (async () => {
     if (markers.length) markers.forEach(marker => marker.replaceWith(makeTOC()));
     else main.prepend(makeTOC());
   }
+  document.querySelector('.preview-progress')?.remove();
   document.documentElement.dataset.renderComplete = 'true';
   return window.previewRenderState;
 })().catch(error => {
   const node = document.createElement('span'); document.querySelector('main').prepend(node);
   renderError(node, '预览', '', error);
+  document.querySelector('.preview-progress')?.remove();
   document.documentElement.dataset.renderComplete = 'true';
   return window.previewRenderState;
 });

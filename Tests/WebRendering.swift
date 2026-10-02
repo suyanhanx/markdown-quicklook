@@ -16,7 +16,13 @@ final class WebRenderingTest: NSObject, NSApplicationDelegate, WKNavigationDeleg
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1000, height: 1000), configuration: configuration)
         webView.navigationDelegate = self
         do {
-            let html = try String(contentsOfFile: CommandLine.arguments[1], encoding: .utf8)
+            var html = try String(contentsOfFile: CommandLine.arguments[1], encoding: .utf8)
+            if CommandLine.arguments[1].contains("cancel.html") {
+                html = html.replacingOccurrences(of: "window.previewRenderPromise =", with: "setTimeout(() => window.cancelPreview(), 0); window.previewRenderPromise =")
+            }
+            if CommandLine.arguments[1].contains("timeout.html") {
+                html = html.replacingOccurrences(of: "window.previewRenderPromise =", with: "window.mermaid.parse = () => new Promise(() => {}); window.previewRenderPromise =")
+            }
             webView.loadHTMLString(html, baseURL: nil)
         } catch { print(error); exit(1) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 45) { print("Web rendering timed out"); exit(1) }
@@ -25,7 +31,26 @@ final class WebRenderingTest: NSObject, NSApplicationDelegate, WKNavigationDeleg
         webView.callAsyncJavaScript("""
         await window.previewRenderPromise;
         await Promise.all(Array.from(document.images).map(img => img.complete ? Promise.resolve() : new Promise(resolve => {img.addEventListener('load',resolve,{once:true}); img.addEventListener('error',resolve,{once:true});})));
-        return {state: window.previewRenderState,
+        const viewport = document.querySelector('.diagram-viewport');
+        const toolbar = document.querySelector('.diagram-toolbar');
+        let zoomWorks = false, scrollWorks = false, fitWorks = false;
+        if (toolbar) {
+          const buttons = Array.from(toolbar.querySelectorAll('button'));
+          const svg = viewport.querySelector('svg');
+          buttons.find(b=>b.textContent === '实际大小').click();
+          const before = svg.getBoundingClientRect().width;
+          buttons.find(b=>b.textContent === '放大').click();
+          zoomWorks = svg.getBoundingClientRect().width > before;
+          viewport.style.width = '200px';
+          scrollWorks = viewport.scrollWidth > viewport.clientWidth;
+          viewport.scrollLeft = 100;
+          scrollWorks = scrollWorks && viewport.scrollLeft > 0;
+          buttons.find(b=>b.textContent === '适应宽度').click();
+          fitWorks = svg.getBoundingClientRect().width <= viewport.clientWidth + 1;
+        }
+        return {state: window.previewRenderState, zoomWorks, scrollWorks, fitWorks,
+                highlightSkipped:Array.from(document.querySelectorAll('.html-notice')).some(x=>x.textContent.includes('跳过高亮')),
+                text:document.querySelector('main').textContent.slice(0,2000),
                 alerts:document.querySelectorAll('.markdown-alert').length,
                 headings:Array.from(document.querySelectorAll('h1,h2')).map(x=>x.id),
                 toc:document.querySelectorAll('.document-toc a').length,
@@ -57,6 +82,17 @@ final class WebRenderingTest: NSObject, NSApplicationDelegate, WKNavigationDeleg
                           let resources = dictionary["resources"] as? [String],
                           dictionary["visibleAssistiveMath"] as? Bool == false, dictionary["pending"] as? Bool == false else { exit(1) }
                     let path = CommandLine.arguments[1]
+                    if path.contains("navigation.html") {
+                        exit(diagrams == 2 && errors == 0 && dictionary["zoomWorks"] as? Bool == true && dictionary["scrollWorks"] as? Bool == true && dictionary["fitWorks"] as? Bool == true ? 0 : 1)
+                    }
+                    if path.contains("limits.html") {
+                        let text = dictionary["text"] as? String ?? ""
+                        exit(errors == 1 && text.contains("图表超过限制") && dictionary["highlightSkipped"] as? Bool == true ? 0 : 1)
+                    }
+                    if path.contains("cancel.html") || path.contains("timeout.html") {
+                        let text = dictionary["text"] as? String ?? ""
+                        exit(errors >= 1 && diagrams == 0 && (text.contains("已取消") || text.contains("超时")) ? 0 : 1)
+                    }
                     if path.contains("remote-live") {
                         exit(dictionary["images"] as? Int == 1 && dictionary["imageErrors"] as? Int == 1 && resources.count == 2 ? 0 : 1)
                     }

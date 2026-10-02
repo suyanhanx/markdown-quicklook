@@ -44,7 +44,7 @@ struct SettingsView: View {
                     NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.ExtensionsPreferences")!)
                 }
                 Spacer()
-                Text("1.2 · 无广告").foregroundStyle(.secondary).font(.caption)
+                Text("\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "未知版本") · 无广告").foregroundStyle(.secondary).font(.caption)
             }
         }.padding(28).frame(width: 480)
     }

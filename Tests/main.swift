@@ -78,3 +78,47 @@ check(MarkdownDocument.splitFrontMatter("---\nNo closing delimiter").yaml == nil
 let remote = try renderer.render(markdown: "![成功](http://127.0.0.1:54321/ok.png)\n\n![失败](http://127.0.0.1:54321/missing.png)", title: "Remote test", baseURL: root, settings: PreviewSettings(loadRemoteImages: true))
 try remote.write(to: root.appendingPathComponent("build/remote-template.html"), atomically: true, encoding: .utf8)
 print("Passed \(checks) total renderer checks including TextBundle and front matter")
+
+// Boundaries and cooperative cancellation are exercised through the production renderer.
+do {
+    _ = try renderer.render(markdown: "# Cancel", title: "", baseURL: root, settings: PreviewSettings(), budget: RenderBudget(cancelled: { true }))
+    fatalError("Cancelled request must stop")
+} catch is CancellationError { checks += 1 }
+do {
+    _ = try renderer.render(markdown: "# Timeout", title: "", baseURL: root, settings: PreviewSettings(), budget: RenderBudget(seconds: 0))
+    fatalError("Expired request must stop")
+} catch RenderBudget.LimitError.timeout { checks += 1 }
+var checkpoints = 0
+do {
+    _ = try renderer.render(markdown: String(repeating: "text ", count: 50000), title: "", baseURL: root, settings: PreviewSettings(), budget: RenderBudget(cancelled: { checkpoints += 1; return checkpoints >= 4 }))
+    fatalError("Cancellation during work must stop")
+} catch is CancellationError { check(checkpoints >= 4, "Cancellation checked during parsing") }
+let oversizedFile = temp.appendingPathComponent("oversized.md")
+try Data(repeating: 65, count: 20 * 1024 * 1024 + 1).write(to: oversizedFile)
+do {
+    _ = try renderer.render(file: oversizedFile)
+    fatalError("Oversized file must fail")
+} catch MarkdownRenderer.RenderError.fileTooLarge { checks += 1 }
+let largeImage = temp.appendingPathComponent("oversized.png")
+try Data(repeating: 0, count: 10 * 1024 * 1024 + 1).write(to: largeImage)
+let imageLimit = try renderer.render(markdown: "![large](oversized.png)", title: "", baseURL: temp, settings: PreviewSettings())
+check(imageLimit.contains("超过限制"), "Large image has visible limit notice")
+let started = Date()
+let largeDocument = try renderer.render(markdown: String(repeating: "plain text ", count: 100000), title: "Large", baseURL: root, settings: PreviewSettings())
+check(largeDocument.contains("plain text"), "1 MB document completes within budget")
+print("Large document seconds: \(Date().timeIntervalSince(started))")
+let navigation = try renderer.render(file: root.appendingPathComponent("Fixtures/diagram-navigation.md"))
+try navigation.write(to: root.appendingPathComponent("build/navigation.html"), atomically: true, encoding: .utf8)
+let limitSource = "```mermaid\nflowchart LR\n" + String(repeating: "A --> B\n", count: 401) + "```\n\n```text\n" + String(repeating: "a", count: 50001) + "\n```"
+try renderer.render(markdown: limitSource, title: "Limits", baseURL: root, settings: PreviewSettings()).write(to: root.appendingPathComponent("build/limits.html"), atomically: true, encoding: .utf8)
+try navigation.write(to: root.appendingPathComponent("build/cancel.html"), atomically: true, encoding: .utf8)
+try navigation.write(to: root.appendingPathComponent("build/timeout.html"), atomically: true, encoding: .utf8)
+print("Passed \(checks) total renderer checks including limits and cancellation")
+let pixelLimit = try renderer.render(markdown: "![pixels](Fixtures/oversized-pixels.png)", title: "", baseURL: root, settings: PreviewSettings())
+check(pixelLimit.contains("超过 4000 万像素"), "Huge raster dimensions are rejected before decoding")
+let largeSVG = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"><!--" + String(repeating: "x", count: 7 * 1024 * 1024) + "--></svg>"
+try largeSVG.write(to: temp.appendingPathComponent("large.svg"), atomically: true, encoding: .utf8)
+let cumulative = try renderer.render(markdown: "![a](large.svg)\n![b](large.svg)\n![c](large.svg)", title: "", baseURL: temp, settings: PreviewSettings())
+check(cumulative.contains("累计 20 MB"), "Cumulative image byte limit is visible")
+check(cumulative.components(separatedBy: "data:image/svg+xml;base64,").count == 3, "Only two 7 MB images are embedded")
+print("Passed \(checks) total renderer checks including pixel and cumulative image limits")
