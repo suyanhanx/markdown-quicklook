@@ -127,3 +127,7 @@ let skeletonDemo = try renderer.render(markdown: "# Skeleton test\n\n```mermaid\
 try skeletonDemo.write(to: root.appendingPathComponent("build/skeleton.html"), atomically: true, encoding: .utf8)
 
 try skeletonDemo.replacingOccurrences(of: "<title>Skeleton test</title>", with: "<title>Scroll pause test</title>").write(to: root.appendingPathComponent("build/scrollpause.html"), atomically: true, encoding: .utf8)
+
+for timingCase in ["queueclock", "itemclock"] {
+    try skeletonDemo.replacingOccurrences(of: "<title>Skeleton test</title>", with: "<title>Timing test</title>").write(to: root.appendingPathComponent("build/\(timingCase).html"), atomically: true, encoding: .utf8)
+}

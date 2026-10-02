@@ -28,3 +28,8 @@ printf 'WebKit: queued and active skeletons, progress and completion cleanup ver
 
 build/web-rendering-tests build/scrollpause.html > build/web-scrollpause-result.json
 printf 'WebKit: scrolling defers new work; completed images retain identity and decoded content.\n'
+
+for fixture in queueclock itemclock; do
+  build/web-rendering-tests "build/$fixture.html" > "build/web-$fixture-result.json"
+done
+printf 'WebKit: queue time excluded; each item receives an independent render deadline.\n'

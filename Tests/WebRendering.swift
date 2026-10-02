@@ -29,6 +29,15 @@ final class WebRenderingTest: NSObject, NSApplicationDelegate, WKNavigationDeleg
             if CommandLine.arguments[1].contains("scrollpause.html") {
                 html = html.replacingOccurrences(of: "window.previewRenderPromise =", with: "window.parseStartTimes = []; window.pauseTestStarted = performance.now(); const originalParse = mermaid.parse.bind(mermaid); mermaid.parse = (...args) => {window.parseStartTimes.push(performance.now()-window.pauseTestStarted); return originalParse(...args);}; window.dispatchEvent(new Event('scroll')); const scrolling = setInterval(()=>window.dispatchEvent(new Event('scroll')),30); setTimeout(()=>clearInterval(scrolling),300); window.previewRenderPromise =")
             }
+            if CommandLine.arguments[1].contains("queueclock.html") || CommandLine.arguments[1].contains("itemclock.html") {
+                html = html.replacingOccurrences(of: "window.previewRenderPromise =", with: "window.clockOffset = 0; const realNow = performance.now.bind(performance); performance.now = () => realNow() + window.clockOffset; window.previewRenderPromise =")
+                if CommandLine.arguments[1].contains("queueclock.html") {
+                    html = html.replacingOccurrences(of: "updateProgress();\n  await checkpoint();", with: "updateProgress(); window.clockOffset += 60000;\n  await checkpoint();")
+                    html = html.replacingOccurrences(of: "finishSkeleton(target);", with: "finishSkeleton(target); window.clockOffset += 60000;")
+                } else {
+                    html = html.replacingOccurrences(of: "window.previewRenderPromise =", with: "const renderNormally = mermaid.render.bind(mermaid); let timedItem = false; mermaid.render = async (...args) => {const result = await renderNormally(...args); if (!timedItem) {timedItem = true; window.clockOffset += 31000;} return result;}; window.previewRenderPromise =")
+                }
+            }
             webView.loadHTMLString(html, baseURL: nil)
         } catch { print(error); exit(1) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 45) { print("Web rendering timed out"); exit(1) }
@@ -120,6 +129,10 @@ final class WebRenderingTest: NSObject, NSApplicationDelegate, WKNavigationDeleg
                     guard dictionary["retainedAfterScroll"] as? Bool == true else { exit(1) }
                     guard dictionary["skeletonsLeft"] as? Int == 0 else { exit(1) }
                     let path = CommandLine.arguments[1]
+                    if path.contains("queueclock.html") { exit(diagrams == 2 && errors == 0 ? 0 : 1) }
+                    if path.contains("itemclock.html") {
+                        exit(diagrams == 1 && errors == 1 && (dictionary["text"] as? String)?.contains("本项渲染超过 30 秒") == true ? 0 : 1)
+                    }
                     if path.contains("scrollpause.html") {
                         guard let starts = dictionary["parseStartTimes"] as? [Double] else { exit(1) }
                         exit(starts.count == 2 && starts[0] >= 400 && errors == 0 && diagrams == 2 ? 0 : 1)

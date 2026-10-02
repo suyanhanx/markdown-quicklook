@@ -45,11 +45,11 @@ function finishSkeleton(node) {
 function decodeTex(base64) {
   return new TextDecoder().decode(Uint8Array.from(atob(base64), c => c.charCodeAt(0)));
 }
-const previewControl = {cancelled:false, deadline:performance.now() + 30000, lastScroll:-Infinity};
+const previewControl = {cancelled:false, lastScroll:-Infinity};
 window.cancelPreview = () => { previewControl.cancelled = true; };
 addEventListener('pagehide', window.cancelPreview, {once:true});
 addEventListener('scroll', () => { previewControl.lastScroll = performance.now(); }, {capture:true, passive:true});
-async function checkpoint() {
+async function checkpoint(budget) {
   await new Promise(resolve => setTimeout(resolve, 0));
   if (previewControl.cancelled) throw new Error('预览渲染已取消');
   const pausedAt = performance.now();
@@ -57,8 +57,10 @@ async function checkpoint() {
     if (previewControl.cancelled) throw new Error('预览渲染已取消');
     await new Promise(resolve => setTimeout(resolve, 40));
   }
-  previewControl.deadline += performance.now() - pausedAt;
-  if (performance.now() > previewControl.deadline) throw new Error('预览渲染超过 30 秒，已停止');
+  if (budget) {
+    budget.deadline += performance.now() - pausedAt;
+    if (performance.now() > budget.deadline) throw new Error('本项渲染超过 30 秒，已停止');
+  }
 }
 async function bounded(promise, milliseconds) {
   let timer, cancellationTimer;
@@ -181,8 +183,9 @@ window.previewRenderPromise = (async () => {
       await bounded(MathJax.startup.promise, 5000);
       for (const [index, item] of mathItems.entries()) {
         try {
-          activateSkeleton(item.node);
           await checkpoint();
+          activateSkeleton(item.node);
+          const budget = {deadline:performance.now() + 30000};
           if (index >= 200 || item.source.length > 10000) throw new Error('公式超过限制：最多 200 项，单项 10000 字符');
           const result = MathJax.tex2svg(item.source, {display: item.display});
           const errorNode = result.querySelector('[data-mjx-error]');
@@ -195,7 +198,7 @@ window.previewRenderPromise = (async () => {
           image.style.width = svg.getAttribute('width');
           image.style.height = svg.getAttribute('height');
           image.style.verticalAlign = svg.style.verticalAlign;
-          await checkpoint();
+          await checkpoint(budget);
           item.node.replaceChildren(image);
           finishSkeleton(item.node);
           item.node.setAttribute('aria-label', item.source);
@@ -213,23 +216,25 @@ window.previewRenderPromise = (async () => {
       for (let i = 0; i < diagrams.length; i++) {
         const {source, target} = diagrams[i];
         try {
+          await checkpoint();
           activateSkeleton(target);
-          // Let WebKit paint the active state before entering synchronous layout.
+          // Paint before starting this item's clock. Queue and scroll waits are excluded.
           await new Promise(resolve => setTimeout(resolve, 16));
           await checkpoint();
+          const budget = {deadline:performance.now() + 30000};
           if (i >= 20 || source.length > 20000 || source.split('\n').length > 400) throw new Error('图表超过限制：最多 20 张，单张 20000 字符、400 行、200 条边');
           // Parse first so invalid input never leaves Mermaid's temporary error SVG behind.
           await bounded(mermaid.parse(source), 5000);
-          await checkpoint();
+          await checkpoint(budget);
           const {svg} = await bounded(mermaid.render(`diagram-${i}`, source), 5000);
-          await checkpoint();
+          await checkpoint(budget);
           const parsed = new DOMParser().parseFromString(svg, 'image/svg+xml');
           const graphic = parsed.documentElement, view = graphic.viewBox?.baseVal;
           if (parsed.querySelector('parsererror') || !view?.width || !view?.height) throw new Error('图表缺少有效 SVG 尺寸');
           const width = view.width, height = view.height;
           const image = await svgImage(graphic, `图表 ${i + 1}：${Array.from(graphic.querySelectorAll('text')).map(x=>x.textContent).join('，')}`);
           image.className = 'diagram-image';
-          await checkpoint();
+          await checkpoint(budget);
           target.replaceChildren(image);
           diagramControls(target, image, width, height);
           finishSkeleton(target);
