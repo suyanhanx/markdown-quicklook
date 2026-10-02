@@ -1,0 +1,87 @@
+name: MarkdownQuickLook
+options:
+  deploymentTarget:
+    macOS: '13.0'
+settings:
+  base:
+    SWIFT_VERSION: '5.0'
+    ALWAYS_SEARCH_USER_PATHS: NO
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: '-'
+    ENABLE_HARDENED_RUNTIME: YES
+    MARKETING_VERSION: '1.0'
+    CURRENT_PROJECT_VERSION: '1'
+    SWIFT_OBJC_BRIDGING_HEADER: Shared/MarkdownBridge.h
+    HEADER_SEARCH_PATHS:
+      - $(SRCROOT)/Vendor/cmark-gfm/src
+      - $(SRCROOT)/Vendor/cmark-gfm/extensions
+      - $(SRCROOT)/build/cmark/src
+      - $(SRCROOT)/build/cmark/extensions
+    LIBRARY_SEARCH_PATHS: $(SRCROOT)/build/lib
+    OTHER_LDFLAGS:
+      - '-lcmark-gfm-extensions'
+      - '-lcmark-gfm'
+targets:
+  MarkdownQuickLook:
+    type: application
+    platform: macOS
+    sources:
+      - App
+      - Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: local.yan.MarkdownQuickLook
+        PRODUCT_NAME: Markdown Quick Look
+        PRODUCT_MODULE_NAME: MarkdownQuickLook
+        CODE_SIGN_ENTITLEMENTS: App/App.entitlements
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Markdown Quick Look
+        LSApplicationCategoryType: public.app-category.utilities
+        NSHumanReadableCopyright: 'Copyright © 2026 Yan'
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Markdown document
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: None
+            LSItemContentTypes: [net.daringfireball.markdown, public.markdown]
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: net.daringfireball.markdown
+            UTTypeDescription: Markdown document
+            UTTypeConformsTo: [public.plain-text]
+            UTTypeTagSpecification:
+              public.filename-extension: [md, markdown, mdx, mdown, mkd]
+    dependencies:
+      - target: MarkdownPreview
+        embed: true
+  MarkdownPreview:
+    type: app-extension
+    platform: macOS
+    sources:
+      - Extension
+      - Shared
+      - path: Resources
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: local.yan.MarkdownQuickLook.Preview
+        PRODUCT_NAME: MarkdownPreview
+        PRODUCT_MODULE_NAME: MarkdownPreview
+        CODE_SIGN_ENTITLEMENTS: Extension/Extension.entitlements
+        SKIP_INSTALL: YES
+    info:
+      path: Extension/Info.plist
+      properties:
+        CFBundleDisplayName: Markdown Quick Look Preview
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.quicklook.preview
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PreviewProvider
+          NSExtensionAttributes:
+            QLIsDataBasedPreview: true
+            QLSupportedContentTypes: [net.daringfireball.markdown, public.markdown, io.typora.markdown, net.ia.markdown, com.unknown.md, com.rstudio.rmarkdown, org.quarto.qmarkdown]
+            QLSupportsSearchableItems: false
+schemes:
+  MarkdownQuickLook:
+    build:
+      targets:
+        MarkdownQuickLook: all
