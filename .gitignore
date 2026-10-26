@@ -3,3 +3,4 @@ build/
 *.xcodeproj/
 
 *.log
+HANDOFF.md

@@ -19,6 +19,8 @@ HTML 与远程图片默认关闭。HTML 开启后由 DOMPurify 3.4.16 清理，�
 要求：Xcode、CMake、XcodeGen、本机 Apple Development 签名证书。
 
 ```sh
+git clone --recurse-submodules https://github.com/suyanhanx/markdown-quicklook.git
+cd markdown-quicklook
 export PATH="/opt/homebrew/bin:$PATH"
 security find-identity -v -p codesigning
 SIGNING_IDENTITY='你的 Apple Development 证书名称或指纹' Scripts/build.sh
@@ -87,7 +89,7 @@ Mermaid：`Resources/mermaid-LICENSE.txt`（MIT）。MathJax：`Resources/mathja
 
 图标为项目自绘，源文件 `Scripts/make-icon.swift`，生成后使用 `iconutil` 制作 `App/AppIcon.icns`。应用版本从 Info.plist 读取。
 
-DMG、签名验证、升级备份/失败回滚和可恢复卸载见 [安装说明](INSTALL.md)。本机已验证升级、卸载后重装和注入注册失败后的恢复；本轮没有公证或对外发布。
+DMG、签名验证、升级备份/失败回滚和可恢复卸载见 [安装说明](INSTALL.md)。已在开发机器验证升级、卸载后重装和注入注册失败后的恢复。仓库提供源代码；安装包尚未公证。
 
 2026-10-03：1.3 在实际 Finder 完成 60 节点图表、100%/125% 缩放与横向滚动验证。完整测试通过 241 项渲染断言、10 个 WebKit 场景及请求级超时/取消/忙状态/恢复检查。测试过程中发现系统偏好读取曾阻塞，已将其纳入请求级超时保护；不以普通渲染检查替代这个边界。
 

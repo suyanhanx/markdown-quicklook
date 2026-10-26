@@ -21,4 +21,4 @@
 
 运行 `Scripts/package.sh`，DMG 和 SHA-256 校验文件生成在 `build/releases/`。
 
-当前使用本机 Apple Development 证书签名，**没有公证**。已验证本机安装，不保证其他 Mac 的 Gatekeeper 接受。对外分发时需另行准备 Developer ID Application 证书、目标架构构建、签名、公证与 stapling；本轮不申请账户、证书或提交公证。不建议绕过系统安全检查。
+当前使用本机 Apple Development 证书签名，**没有公证**。已验证本机安装，不保证其他 Mac 的 Gatekeeper 接受。对外分发安装包需另行准备 Developer ID Application 证书、目标架构构建、签名、公证与 stapling。
