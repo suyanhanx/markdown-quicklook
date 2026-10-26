@@ -25,7 +25,7 @@ Scripts/install.sh
 
 ## 许可证
 
-Copyright © 2026 suyanhanx. 本项目原创代码以 [Apache License 2.0](LICENSE) 发布。
+[Apache License 2.0](LICENSE)
 
 第三方依赖遵循各自的许可证，原文随源码保留：
 
